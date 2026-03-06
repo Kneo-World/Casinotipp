@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Casino WebApp</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+    <div class="app">
+        <div class="header">
+            <span>Баланс: <span id="balance">0</span> монет</span>
+        </div>
+
+        <div class="game-selector">
+            <button id="btnCrash" class="game-btn active">Самолёт</button>
+            <button id="btnRoulette" class="game-btn">Рулетка</button>
+        </div>
+
+        <!-- Игра Самолёт -->
+        <div id="crashGame" class="game-container active">
+            <div class="multiplier" id="multiplier">1.00x</div>
+            <div class="plane">✈️</div>
+            <div class="event-message" id="eventMessage"></div>
+            <div class="bet-panel">
+                <input type="number" id="betAmount" min="1" value="10" placeholder="Ставка">
+                <button id="startCrash">Играть</button>
+                <button id="cashoutBtn" disabled>Забрать</button>
+            </div>
+        </div>
+
+        <!-- Игра Рулетка -->
+        <div id="rouletteGame" class="game-container">
+            <div class="roulette-wheel" id="rouletteWheel">?</div>
+            <div class="bet-options">
+                <button class="bet-btn" data-type="red">🔴 Красное</button>
+                <button class="bet-btn" data-type="black">⚫ Чёрное</button>
+                <button class="bet-btn" data-type="even">✅ Чёт</button>
+                <button class="bet-btn" data-type="odd">❌ Нечёт</button>
+            </div>
+            <div class="number-bet">
+                <input type="number" id="rouletteNumber" min="0" max="36" placeholder="Число">
+                <button id="betNumber">Ставка на число</button>
+            </div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+  </html>
