@@ -4,16 +4,18 @@ import threading
 import random
 import time
 import json
+import asyncio
 from datetime import datetime
-
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import (
     Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo,
     LabeledPrice, PreCheckoutQuery
 )
-from aiogram.utils.deep_linking import create_start_link
 from flask import Flask, request, jsonify, send_from_directory
+import psycopg2
+from psycopg2.extras import RealDictCursor
+import sqlite3
 
 # ========== НАСТРОЙКИ ==========
 BOT_TOKEN = os.getenv("BOT_TOKEN")
