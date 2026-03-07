@@ -3,9 +3,9 @@ import logging
 import threading
 import random
 import time
-import json
 import asyncio
 from datetime import datetime
+
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import (
@@ -13,9 +13,6 @@ from aiogram.types import (
     LabeledPrice, PreCheckoutQuery
 )
 from flask import Flask, request, jsonify, send_from_directory
-import psycopg2
-from psycopg2.extras import RealDictCursor
-import sqlite3
 
 # ========== НАСТРОЙКИ ==========
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -36,20 +33,27 @@ import sqlite3
 
 def get_db_connection():
     if DATABASE_URL:
-        # PostgreSQL
         conn = psycopg2.connect(DATABASE_URL, sslmode='require')
         return conn
     else:
-        # SQLite fallback
         conn = sqlite3.connect("database.db")
         conn.row_factory = sqlite3.Row
         return conn
 
+def get_cursor(conn):
+    """Возвращает курсор, который возвращает строки в виде словарей."""
+    if DATABASE_URL:
+        return conn.cursor(cursor_factory=RealDictCursor)
+    else:
+        return conn.cursor()
+
 def init_db():
     conn = get_db_connection()
-    cur = conn.cursor()
+    cur = get_cursor(conn)
+
+    # Создаём таблицы, если их нет
     if DATABASE_URL:
-        # PostgreSQL syntax
+        # PostgreSQL
         cur.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id BIGINT PRIMARY KEY,
@@ -81,8 +85,19 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        # Проверяем и добавляем недостающие колонки в users (для обратной совместимости)
+        cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='users'")
+        existing_columns = {row['column_name'] for row in cur.fetchall()}
+        required_columns = {
+            'balance', 'wins', 'loses', 'games_played', 'total_deposit'
+        }
+        for col in required_columns:
+            if col not in existing_columns:
+                cur.execute(f"ALTER TABLE users ADD COLUMN {col} INTEGER DEFAULT 0")
+                print(f"Добавлена колонка {col} в таблицу users")
     else:
-        # SQLite syntax
+        # SQLite
         cur.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
@@ -118,10 +133,10 @@ def init_db():
     cur.close()
     conn.close()
 
-# Вспомогательные функции для работы с пользователями
+# ========== РАБОТА С ПОЛЬЗОВАТЕЛЯМИ ==========
 def get_user(user_id: int):
     conn = get_db_connection()
-    cur = conn.cursor()
+    cur = get_cursor(conn)
     if DATABASE_URL:
         cur.execute("SELECT * FROM users WHERE user_id = %s", (user_id,))
     else:
@@ -152,7 +167,7 @@ def get_user(user_id: int):
 
 def update_balance(user_id: int, delta: int):
     conn = get_db_connection()
-    cur = conn.cursor()
+    cur = get_cursor(conn)
     if DATABASE_URL:
         cur.execute("UPDATE users SET balance = balance + %s WHERE user_id = %s", (delta, user_id))
     else:
@@ -163,7 +178,7 @@ def update_balance(user_id: int, delta: int):
 
 def set_balance(user_id: int, new_balance: int):
     conn = get_db_connection()
-    cur = conn.cursor()
+    cur = get_cursor(conn)
     if DATABASE_URL:
         cur.execute("UPDATE users SET balance = %s WHERE user_id = %s", (new_balance, user_id))
     else:
@@ -174,7 +189,7 @@ def set_balance(user_id: int, new_balance: int):
 
 def add_stat(user_id: int, win: bool = False, lose: bool = False):
     conn = get_db_connection()
-    cur = conn.cursor()
+    cur = get_cursor(conn)
     if win:
         if DATABASE_URL:
             cur.execute("UPDATE users SET wins = wins + 1, games_played = games_played + 1 WHERE user_id = %s", (user_id,))
@@ -191,7 +206,7 @@ def add_stat(user_id: int, win: bool = False, lose: bool = False):
 
 def get_top_users(limit=10):
     conn = get_db_connection()
-    cur = conn.cursor()
+    cur = get_cursor(conn)
     if DATABASE_URL:
         cur.execute("SELECT user_id, wins, loses, games_played, balance FROM users ORDER BY wins DESC LIMIT %s", (limit,))
     else:
@@ -201,9 +216,9 @@ def get_top_users(limit=10):
     conn.close()
     return rows
 
-# ========== ХРАНИЛИЩЕ АКТИВНЫХ ИГР (CRASH / DUEL) ==========
-active_crash_games = {}  # user_id -> game data
-active_duel_games = {}    # game_id -> game data (для быстрого доступа)
+# ========== ХРАНИЛИЩЕ АКТИВНЫХ ИГР ==========
+active_crash_games = {}
+active_duel_games = {}
 
 # ========== КОМАНДЫ БОТА ==========
 @dp.message(Command("start"))
@@ -222,7 +237,6 @@ async def cmd_start(message: Message):
         "/top — топ игроков\n"
         "/games — список игр\n"
     )
-    # Кнопка для открытия WebApp
     webapp_button = InlineKeyboardButton(
         text="🎰 Открыть казино",
         web_app=WebAppInfo(url=WEBAPP_URL)
@@ -258,8 +272,7 @@ async def cmd_top(message: Message):
         return
     text = "🏆 <b>Топ игроков по победам</b>\n\n"
     for i, row in enumerate(top, 1):
-        user_id, wins, loses, games, balance = row
-        text += f"{i}. ID {user_id} — побед: {wins}, баланс: {balance}\n"
+        text += f"{i}. ID {row['user_id']} — побед: {row['wins']}, баланс: {row['balance']}\n"
     await message.answer(text, parse_mode="HTML")
 
 @dp.message(Command("games"))
@@ -288,11 +301,10 @@ async def cmd_withdraw(message: Message):
 
 @dp.message(Command("help"))
 async def cmd_help(message: Message):
-    await cmd_start(message)  # просто показываем стартовое сообщение
+    await cmd_start(message)
 
 @dp.message(Command("casino"))
 async def cmd_casino(message: Message):
-    # Открываем WebApp
     webapp_button = InlineKeyboardButton(
         text="🎰 Открыть казино",
         web_app=WebAppInfo(url=WEBAPP_URL)
@@ -353,7 +365,7 @@ async def cmd_stats(message: Message):
     if message.from_user.id != ADMIN_ID:
         return
     conn = get_db_connection()
-    cur = conn.cursor()
+    cur = get_cursor(conn)
     if DATABASE_URL:
         cur.execute("SELECT COUNT(*), SUM(balance), SUM(wins), SUM(loses), SUM(games_played) FROM users")
     else:
@@ -386,7 +398,7 @@ async def cmd_giveall(message: Message):
     try:
         amount = int(args[1])
         conn = get_db_connection()
-        cur = conn.cursor()
+        cur = get_cursor(conn)
         if DATABASE_URL:
             cur.execute("UPDATE users SET balance = balance + %s", (amount,))
         else:
@@ -411,7 +423,7 @@ async def successful_payment_handler(message: Message):
         update_balance(user_id, stars)
         # Запись в транзакции
         conn = get_db_connection()
-        cur = conn.cursor()
+        cur = get_cursor(conn)
         if DATABASE_URL:
             cur.execute(
                 "INSERT INTO transactions (user_id, amount, type) VALUES (%s, %s, 'deposit')",
@@ -444,7 +456,12 @@ def api_get_balance():
     if not user_id:
         return jsonify({"error": "user_id required"}), 400
     user = get_user(int(user_id))
-    return jsonify({"balance": user["balance"], "wins": user["wins"], "loses": user["loses"], "games_played": user["games_played"]})
+    return jsonify({
+        "balance": user["balance"],
+        "wins": user["wins"],
+        "loses": user["loses"],
+        "games_played": user["games_played"]
+    })
 
 # API для игры "Ракета" (бывший Crash)
 @flask_app.route("/bet_rocket", methods=["POST"])
@@ -461,9 +478,7 @@ def api_bet_rocket():
         return jsonify({"error": "Insufficient balance"}), 400
     if bet <= 0:
         return jsonify({"error": "Bet must be positive"}), 400
-    # Удерживаем ставку
     update_balance(user_id, -bet)
-    # Генерируем точку краша (от 1.1 до 10.0)
     crash_point = round(random.uniform(1.1, 10.0), 2)
     active_crash_games[user_id] = {
         "bet": bet,
@@ -487,7 +502,6 @@ def api_rocket_status():
     current_multiplier = 1.0 + elapsed * 0.5
     if current_multiplier >= game["crash_point"]:
         del active_crash_games[user_id]
-        # Проигрыш
         add_stat(user_id, lose=True)
         return jsonify({"crashed": True, "multiplier": game["crash_point"]})
     else:
@@ -544,18 +558,16 @@ def api_create_duel():
         return jsonify({"error": "Insufficient balance"}), 400
     if bet <= 0:
         return jsonify({"error": "Bet must be positive"}), 400
-
     # Удерживаем ставку
     update_balance(user_id, -bet)
-
     conn = get_db_connection()
-    cur = conn.cursor()
+    cur = get_cursor(conn)
     if DATABASE_URL:
         cur.execute(
             "INSERT INTO duel_games (player1, bet1, status) VALUES (%s, %s, 'waiting') RETURNING id",
             (user_id, bet)
         )
-        game_id = cur.fetchone()[0]
+        game_id = cur.fetchone()["id"]
     else:
         cur.execute(
             "INSERT INTO duel_games (player1, bet1, status) VALUES (?, ?, 'waiting')",
@@ -570,7 +582,7 @@ def api_create_duel():
 @flask_app.route("/list_duels", methods=["GET"])
 def api_list_duels():
     conn = get_db_connection()
-    cur = conn.cursor()
+    cur = get_cursor(conn)
     if DATABASE_URL:
         cur.execute("SELECT id, player1, bet1 FROM duel_games WHERE status = 'waiting' ORDER BY created_at DESC")
     else:
@@ -578,17 +590,14 @@ def api_list_duels():
     games = cur.fetchall()
     cur.close()
     conn.close()
-    result = []
-    for g in games:
-        result.append({"id": g[0], "player1": g[1], "bet1": g[2]})
-    return jsonify(result)
+    return jsonify([dict(g) for g in games])
 
 @flask_app.route("/join_duel", methods=["POST"])
 def api_join_duel():
     data = request.get_json()
     user_id = data.get("user_id")
     game_id = data.get("game_id")
-    bet = data.get("bet")  # сумма, которую хочет поставить второй игрок
+    bet = data.get("bet")
     if not all([user_id, game_id, bet]):
         return jsonify({"error": "Missing parameters"}), 400
     user_id = int(user_id)
@@ -596,7 +605,7 @@ def api_join_duel():
     bet = int(bet)
 
     conn = get_db_connection()
-    cur = conn.cursor()
+    cur = get_cursor(conn)
     # Получаем игру
     if DATABASE_URL:
         cur.execute("SELECT * FROM duel_games WHERE id = %s AND status = 'waiting'", (game_id,))
@@ -608,8 +617,8 @@ def api_join_duel():
         conn.close()
         return jsonify({"error": "Game not found or already started"}), 404
 
-    player1 = game[1] if DATABASE_URL else game["player1"]
-    bet1 = game[2] if DATABASE_URL else game["bet1"]
+    player1 = game["player1"]
+    bet1 = game["bet1"]
     if user_id == player1:
         return jsonify({"error": "Cannot join your own game"}), 400
 
@@ -655,7 +664,7 @@ def api_duel_status():
         return jsonify({"error": "game_id required"}), 400
     game_id = int(game_id)
     conn = get_db_connection()
-    cur = conn.cursor()
+    cur = get_cursor(conn)
     if DATABASE_URL:
         cur.execute("SELECT * FROM duel_games WHERE id = %s", (game_id,))
     else:
@@ -665,13 +674,7 @@ def api_duel_status():
     conn.close()
     if not game:
         return jsonify({"error": "Game not found"}), 404
-    # Преобразуем в dict
-    if DATABASE_URL:
-        columns = [desc[0] for desc in cur.description]
-        game_dict = dict(zip(columns, game))
-    else:
-        game_dict = dict(game)
-    return jsonify(game_dict)
+    return jsonify(dict(game))
 
 @flask_app.route("/duel_spin", methods=["POST"])
 def api_duel_spin():
@@ -680,8 +683,9 @@ def api_duel_spin():
     if not game_id:
         return jsonify({"error": "game_id required"}), 400
     game_id = int(game_id)
+
     conn = get_db_connection()
-    cur = conn.cursor()
+    cur = get_cursor(conn)
     if DATABASE_URL:
         cur.execute("SELECT * FROM duel_games WHERE id = %s AND status = 'active'", (game_id,))
     else:
@@ -692,16 +696,10 @@ def api_duel_spin():
         conn.close()
         return jsonify({"error": "Game not active"}), 404
 
-    if DATABASE_URL:
-        player1 = game[1]
-        bet1 = game[2]
-        player2 = game[3]
-        bet2 = game[4]
-    else:
-        player1 = game["player1"]
-        bet1 = game["bet1"]
-        player2 = game["player2"]
-        bet2 = game["bet2"]
+    player1 = game["player1"]
+    bet1 = game["bet1"]
+    player2 = game["player2"]
+    bet2 = game["bet2"]
 
     total = bet1 + bet2
     # Определяем победителя случайно, но с весами
@@ -709,7 +707,6 @@ def api_duel_spin():
     if r <= bet1:
         winner = player1
         win_amount = total
-        # Начисляем выигрыш
         update_balance(player1, total)
         add_stat(player1, win=True)
         add_stat(player2, lose=True)
@@ -735,7 +732,6 @@ def api_duel_spin():
     cur.close()
     conn.close()
 
-    # Удаляем из памяти
     if game_id in active_duel_games:
         del active_duel_games[game_id]
 
@@ -747,7 +743,6 @@ def run_flask():
 
 async def main():
     init_db()
-    # Сброс вебхука
     await bot.delete_webhook(drop_pending_updates=True)
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
