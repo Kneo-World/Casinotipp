@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Casino WebApp</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -10,41 +10,63 @@
 <body>
     <div class="app">
         <div class="header">
-            <span>Баланс: <span id="balance">0</span> монет</span>
+            <div class="logo">🎰 Casino</div>
+            <div class="balance">
+                <span>💰</span>
+                <span id="balance">0</span>
+            </div>
         </div>
 
-        <div class="game-selector">
-            <button id="btnCrash" class="game-btn active">Самолёт</button>
-            <button id="btnRoulette" class="game-btn">Рулетка</button>
+        <div class="game-cards">
+            <div class="game-card" id="rocketCard">
+                <div class="card-icon">🚀</div>
+                <div class="card-title">Ракета</div>
+                <div class="card-desc">Лови момент!</div>
+            </div>
+            <div class="game-card" id="duelCard">
+                <div class="card-icon">🎯</div>
+                <div class="card-title">Дуэль рулетка</div>
+                <div class="card-desc">Сразись с соперником</div>
+            </div>
         </div>
 
-        <!-- Игра Самолёт -->
-        <div id="crashGame" class="game-container active">
+        <!-- Игра Ракета -->
+        <div id="rocketGame" class="game-panel" style="display: none;">
             <div class="multiplier" id="multiplier">1.00x</div>
-            <div class="plane">✈️</div>
+            <div class="rocket">🚀</div>
             <div class="event-message" id="eventMessage"></div>
-            <div class="bet-panel">
-                <input type="number" id="betAmount" min="1" value="10" placeholder="Ставка">
-                <button id="startCrash">Играть</button>
-                <button id="cashoutBtn" disabled>Забрать</button>
+            <div class="controls">
+                <input type="number" id="betAmount" placeholder="Ставка" min="1" value="10">
+                <button id="startRocket" class="btn-primary">Играть</button>
+                <button id="cashoutRocket" class="btn-success" disabled>Забрать</button>
             </div>
         </div>
 
-        <!-- Игра Рулетка -->
-        <div id="rouletteGame" class="game-container">
-            <div class="roulette-wheel" id="rouletteWheel">?</div>
-            <div class="bet-options">
-                <button class="bet-btn" data-type="red">🔴 Красное</button>
-                <button class="bet-btn" data-type="black">⚫ Чёрное</button>
-                <button class="bet-btn" data-type="even">✅ Чёт</button>
-                <button class="bet-btn" data-type="odd">❌ Нечёт</button>
+        <!-- Игра Дуэль рулетка -->
+        <div id="duelGame" class="game-panel" style="display: none;">
+            <div class="duel-lobby" id="duelLobby">
+                <h3>Ожидание игроков</h3>
+                <div id="duelsList"></div>
+                <div class="create-duel">
+                    <input type="number" id="duelBet" placeholder="Ваша ставка" min="1">
+                    <button id="createDuel" class="btn-primary">Создать дуэль</button>
+                </div>
             </div>
-            <div class="number-bet">
-                <input type="number" id="rouletteNumber" min="0" max="36" placeholder="Число">
-                <button id="betNumber">Ставка на число</button>
+            <div class="duel-active" id="duelActive" style="display: none;">
+                <div class="duel-players">
+                    <div class="player" id="player1"></div>
+                    <div class="vs">VS</div>
+                    <div class="player" id="player2"></div>
+                </div>
+                <div class="duel-probabilities">
+                    <div id="prob1">50%</div>
+                    <div id="prob2">50%</div>
+                </div>
+                <button id="spinDuel" class="btn-primary">Крутить рулетку</button>
+                <div class="duel-result" id="duelResult"></div>
             </div>
         </div>
     </div>
     <script src="script.js"></script>
 </body>
-  </html>
+    </html>
